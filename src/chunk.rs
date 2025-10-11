@@ -1,28 +1,4 @@
-type Value = f64;
-
-#[repr(u8)]
-pub enum OpCode {
-    Constant,
-    Return,
-}
-
-impl From<OpCode> for u8 {
-    fn from(op: OpCode) -> Self {
-        op as u8
-    }
-}
-
-impl TryFrom<u8> for OpCode {
-    type Error = ();
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            x if x == OpCode::Constant as u8 => Ok(OpCode::Constant),
-            x if x == OpCode::Return as u8 => Ok(OpCode::Return),
-            _ => Err(()),
-        }
-    }
-}
+use crate::value::Value;
 
 #[derive(Debug)]
 pub struct Chunk {
