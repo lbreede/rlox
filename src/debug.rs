@@ -1,4 +1,5 @@
-use crate::chunk::{Chunk, OpCode};
+use crate::chunk::Chunk;
+use crate::opcode::OpCode;
 
 pub fn disassemble_chunk(chunk: &Chunk, name: &str) {
     println!("== {name} ==");
@@ -9,7 +10,7 @@ pub fn disassemble_chunk(chunk: &Chunk, name: &str) {
     }
 }
 
-fn disassemble_instruction(chunk: &Chunk, offset: usize) -> usize {
+pub fn disassemble_instruction(chunk: &Chunk, offset: usize) -> usize {
     print!("{offset:04} ");
     let (byte, line) = chunk.code[offset];
     if offset > 0 && line == chunk.code[offset - 1].1 {
@@ -21,6 +22,11 @@ fn disassemble_instruction(chunk: &Chunk, offset: usize) -> usize {
     if let Ok(instruction) = OpCode::try_from(byte) {
         match instruction {
             OpCode::Constant => constant_instruction("OP_CONSTANT", chunk, offset),
+            OpCode::Add => simple_instruction("OP_ADD", offset),
+            OpCode::Subtract => simple_instruction("OP_SUBTRACT", offset),
+            OpCode::Multiply => simple_instruction("OP_MULTIPLY", offset),
+            OpCode::Divide => simple_instruction("OP_DIVIDE", offset),
+            OpCode::Negate => simple_instruction("OP_NEGATE", offset),
             OpCode::Return => simple_instruction("OP_RETURN", offset),
         }
     } else {
