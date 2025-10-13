@@ -71,7 +71,7 @@ impl VM {
                     print!(" ]");
                 }
                 println!();
-                disassemble_instruction(chunk, self.ip.into());
+                disassemble_instruction(chunk, self.ip);
             }
             let instruction = self.read_byte(chunk);
             let opcode = OpCode::try_from(instruction).expect("Invalid opcode");
