@@ -19,7 +19,7 @@ pub fn compile(source: &str) {
         // Token kind as number: you could implement `as u8` for TokenKind if needed
         println!(
             "{:2?} '{}'",
-            token.kind,
+            token.kind as u8,
             String::from_utf8_lossy(token.lexeme)
         );
 
