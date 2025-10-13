@@ -25,6 +25,9 @@ impl VM {
     }
 
     fn push(&mut self, value: Value) {
+        if self.stack.len() >= STACK_MAX {
+            panic!("Stack overflow");
+        }
         self.stack.push(value);
     }
 
