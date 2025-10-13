@@ -15,11 +15,9 @@ pub fn compile(source: &str) {
             print!("   | ");
         }
 
-        // Print token kind and lexeme
-        // Token kind as number: you could implement `as u8` for TokenKind if needed
         println!(
             "{:2?} '{}'",
-            token.kind as u8,
+            token.kind as u8, // u8 so that it match C-version
             String::from_utf8_lossy(token.lexeme)
         );
 
