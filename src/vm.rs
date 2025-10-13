@@ -1,6 +1,8 @@
+use crate::compiler::compile;
 use crate::debug::disassemble_instruction;
 use crate::value::{Value, print_value};
 use crate::{chunk::Chunk, opcode::OpCode};
+
 const STACK_MAX: usize = 256;
 
 pub enum InterpretResult {
@@ -10,7 +12,7 @@ pub enum InterpretResult {
 }
 
 pub struct VM {
-    ip: u8,
+    ip: usize,
     stack: Vec<Value>,
 }
 
@@ -22,11 +24,10 @@ impl VM {
         }
     }
 
-    fn reset_stack(&mut self) {
-        self.stack.clear()
-    }
-
     fn push(&mut self, value: Value) {
+        if self.stack.len() >= STACK_MAX {
+            panic!("Stack overflow");
+        }
         self.stack.push(value);
     }
 
@@ -34,14 +35,13 @@ impl VM {
         self.stack.pop().expect("Stack underflow")
     }
 
-    pub fn interpret(&mut self, chunk: &Chunk) -> InterpretResult {
-        self.ip = 0;
-        self.reset_stack();
-        self.run(chunk)
+    pub fn interpret(source: &str) -> InterpretResult {
+        compile(source);
+        InterpretResult::Ok
     }
 
     fn read_byte(&mut self, chunk: &Chunk) -> u8 {
-        let byte = chunk.code[self.ip as usize].0;
+        let byte = chunk.code[self.ip].0;
         self.ip += 1;
         byte
     }
@@ -71,7 +71,7 @@ impl VM {
                     print!(" ]");
                 }
                 println!();
-                disassemble_instruction(chunk, self.ip.into());
+                disassemble_instruction(chunk, self.ip);
             }
             let instruction = self.read_byte(chunk);
             let opcode = OpCode::try_from(instruction).expect("Invalid opcode");
@@ -96,5 +96,11 @@ impl VM {
                 }
             }
         }
+    }
+}
+
+impl Default for VM {
+    fn default() -> Self {
+        Self::new()
     }
 }

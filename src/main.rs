@@ -1,31 +1,60 @@
-use rlox::chunk::Chunk;
-use rlox::debug;
-use rlox::opcode::OpCode;
-use rlox::vm::VM;
+use std::io::{self, Write};
+use std::process::{self, ExitCode};
+use std::{env, fs};
 
-fn main() {
-    let mut vm = VM::new();
-    let mut chunk = Chunk::new();
+use rlox::vm::{InterpretResult, VM};
 
-    let constant = chunk.add_constant(1.2);
-    chunk.write(OpCode::Constant.into(), 123);
-    chunk.write(constant, 123);
+fn main() -> ExitCode {
+    let args: Vec<String> = env::args().collect();
 
-    let constant = chunk.add_constant(3.4);
-    chunk.write(OpCode::Constant.into(), 123);
-    chunk.write(constant, 123);
+    match args.len() {
+        1 => repl(),
+        2 => run_file(&args[1]),
+        _ => {
+            eprintln!("Usage: rlox [path]");
+            return ExitCode::from(64);
+        }
+    }
 
-    chunk.write(OpCode::Add.into(), 123);
+    ExitCode::SUCCESS
+}
 
-    let constant = chunk.add_constant(5.6);
-    chunk.write(OpCode::Constant.into(), 123);
-    chunk.write(constant, 123);
+fn repl() {
+    let stdin = io::stdin();
 
-    chunk.write(OpCode::Divide.into(), 123);
-    chunk.write(OpCode::Negate.into(), 123);
+    loop {
+        print!("> ");
+        io::stdout().flush().expect("failed to flush stdout");
 
-    chunk.write(OpCode::Return.into(), 123);
+        let mut line = String::new();
+        let bytes_read = stdin.read_line(&mut line).expect("failed to read line");
 
-    debug::disassemble_chunk(&chunk, "test chunk");
-    vm.interpret(&chunk);
+        // EOF (Ctrl+D)
+        if bytes_read == 0 {
+            println!();
+            break;
+        }
+
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        VM::interpret(&line);
+    }
+}
+
+fn run_file(path: &str) {
+    let source = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Failed to read file {path}: {e}");
+            process::exit(74);
+        }
+    };
+
+    match VM::interpret(&source) {
+        InterpretResult::CompileError => process::exit(65),
+        InterpretResult::RuntimeError => process::exit(70),
+        InterpretResult::Ok => {}
+    }
 }
