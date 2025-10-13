@@ -12,7 +12,7 @@ pub enum InterpretResult {
 }
 
 pub struct VM {
-    ip: u8,
+    ip: usize,
     stack: Vec<Value>,
 }
 
@@ -38,7 +38,7 @@ impl VM {
     }
 
     fn read_byte(&mut self, chunk: &Chunk) -> u8 {
-        let byte = chunk.code[self.ip as usize].0;
+        let byte = chunk.code[self.ip].0;
         self.ip += 1;
         byte
     }
