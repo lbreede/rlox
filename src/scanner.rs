@@ -292,7 +292,7 @@ mod tests {
 
     #[test]
     fn string() {
-        // TODO: Make these tests more sufisticated!
+        // TODO: Make these tests more sophisticated!
         let mut scanner = Scanner::new("\"hello\"");
         assert_eq!(scanner.scan_token().kind, TokenKind::String);
         assert_eq!(scanner.scan_token().kind, TokenKind::Eof);
