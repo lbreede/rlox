@@ -1,6 +1,8 @@
+use crate::compiler::compile;
 use crate::debug::disassemble_instruction;
 use crate::value::{Value, print_value};
 use crate::{chunk::Chunk, opcode::OpCode};
+
 const STACK_MAX: usize = 256;
 
 pub enum InterpretResult {
@@ -22,10 +24,6 @@ impl VM {
         }
     }
 
-    fn reset_stack(&mut self) {
-        self.stack.clear()
-    }
-
     fn push(&mut self, value: Value) {
         self.stack.push(value);
     }
@@ -34,10 +32,9 @@ impl VM {
         self.stack.pop().expect("Stack underflow")
     }
 
-    pub fn interpret(&mut self, chunk: &Chunk) -> InterpretResult {
-        self.ip = 0;
-        self.reset_stack();
-        self.run(chunk)
+    pub fn interpret(source: &str) -> InterpretResult {
+        compile(source);
+        InterpretResult::Ok
     }
 
     fn read_byte(&mut self, chunk: &Chunk) -> u8 {
@@ -96,5 +93,11 @@ impl VM {
                 }
             }
         }
+    }
+}
+
+impl Default for VM {
+    fn default() -> Self {
+        Self::new()
     }
 }
