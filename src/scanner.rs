@@ -1,4 +1,5 @@
 use crate::token::{Token, TokenKind};
+use crate::value::Value;
 
 pub struct Scanner<'a> {
     source: &'a [u8],
@@ -201,7 +202,16 @@ impl<'a> Scanner<'a> {
             }
         }
 
-        self.make_token(TokenKind::Number)
+        let lexeme = &self.source[self.start..self.current];
+        // let value: Value = lexeme.parse().unwrap();
+        // self.make_token(TokenKind::Number)
+        let s = std::str::from_utf8(lexeme).expect("invalid UTF-8");
+        let value: Value = s.parse().expect("invalid float");
+        Token {
+            kind: TokenKind::Number(value),
+            lexeme,
+            line: self.line,
+        }
     }
 
     fn is_alpha(c: u8) -> bool {
@@ -379,11 +389,11 @@ abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890_"#;
         assert_eq!(
             tokens,
             vec![
-                Token::new(TokenKind::Number, b"123", 1),
-                Token::new(TokenKind::Number, b"123.456", 2),
+                Token::new(TokenKind::Number(123.0), b"123", 1),
+                Token::new(TokenKind::Number(123.456), b"123.456", 2),
                 Token::new(TokenKind::Dot, b".", 3),
-                Token::new(TokenKind::Number, b"456", 3),
-                Token::new(TokenKind::Number, b"123", 4),
+                Token::new(TokenKind::Number(456.0), b"456", 3),
+                Token::new(TokenKind::Number(123.0), b"123", 4),
                 Token::new(TokenKind::Dot, b".", 4),
             ]
         );
