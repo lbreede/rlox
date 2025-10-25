@@ -1,11 +1,11 @@
-use crate::compiler::compile;
+use crate::compiler::Compiler;
 use crate::debug::disassemble_instruction;
 use crate::value::{Value, print_value};
 use crate::{chunk::Chunk, opcode::OpCode};
 
 const STACK_MAX: usize = 256;
 
-pub enum InterpretResult {
+pub enum Interpret {
     Ok,
     CompileError,
     RuntimeError,
@@ -35,9 +35,12 @@ impl VM {
         self.stack.pop().expect("Stack underflow")
     }
 
-    pub fn interpret(source: &str) -> InterpretResult {
-        compile(source);
-        InterpretResult::Ok
+    pub fn interpret(&mut self, source: &str) -> Interpret {
+        let mut compiler = Compiler::new(source);
+        if !compiler.compile() {
+            return Interpret::CompileError;
+        }
+        self.run(&compiler.chunk)
     }
 
     fn read_byte(&mut self, chunk: &Chunk) -> u8 {
@@ -60,7 +63,7 @@ impl VM {
         self.push(op(a, b));
     }
 
-    pub fn run(&mut self, chunk: &Chunk) -> InterpretResult {
+    pub fn run(&mut self, chunk: &Chunk) -> Interpret {
         loop {
             #[cfg(debug_assertions)]
             {
@@ -92,7 +95,7 @@ impl VM {
                 OpCode::Return => {
                     print_value(&self.pop());
                     println!();
-                    return InterpretResult::Ok;
+                    return Interpret::Ok;
                 }
             }
         }
