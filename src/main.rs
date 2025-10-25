@@ -2,7 +2,7 @@ use std::io::{self, Write};
 use std::process::{self, ExitCode};
 use std::{env, fs};
 
-use rlox::vm::{InterpretResult, VM};
+use rlox::vm::{Interpret, VM};
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().collect();
@@ -39,7 +39,8 @@ fn repl() {
             continue;
         }
 
-        VM::interpret(&line);
+        let mut vm = VM::new();
+        let _ = vm.interpret(&line);
     }
 }
 
@@ -52,9 +53,11 @@ fn run_file(path: &str) {
         }
     };
 
-    match VM::interpret(&source) {
-        InterpretResult::CompileError => process::exit(65),
-        InterpretResult::RuntimeError => process::exit(70),
-        InterpretResult::Ok => {}
+    let mut vm = VM::new();
+    let result = vm.interpret(&source);
+    match result {
+        Interpret::CompileError => process::exit(65),
+        Interpret::RuntimeError => process::exit(70),
+        Interpret::Ok => {}
     }
 }
