@@ -50,7 +50,7 @@ pub enum TokenKind {
     Eof,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Token<'a> {
     pub kind: TokenKind,
     pub lexeme: &'a [u8],
