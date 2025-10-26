@@ -1,5 +1,3 @@
-use std::iter::Peekable;
-
 use crate::chunk::Chunk;
 use crate::opcode::OpCode;
 use crate::scanner::Scanner;
@@ -22,40 +20,73 @@ enum Prec {
     Primary,
 }
 
-struct Parser<'a> {
-    scanner: Scanner<'a>,
-    current: Option<Token<'a>>,
-    previous: Option<Token<'a>>,
+#[derive(Debug)]
+struct Parser {
+    scanner: Scanner,
+    current: Token,
+    previous: Token,
     had_error: bool,
     panic_mode: bool,
 }
 
-impl<'a> Parser<'a> {
-    fn new(source: &'a str) -> Self {
+impl Parser {
+    fn new(source: &str) -> Self {
         let mut scanner = Scanner::new(source);
-        let current = scanner.next();
+        let current = scanner.scan_token();
         Self {
             scanner,
             current,
-            previous: None,
+            previous: Token::new(TokenKind::Eof, 0),
             had_error: false,
             panic_mode: false,
         }
     }
 
     fn advance(&mut self) {
-        self.previous = self.current.take();
-        self.current = self.scanner.next();
+        std::mem::swap(&mut self.previous, &mut self.current);
+        self.current = self.scanner.scan_token();
+    }
+
+    fn consume(&mut self, kind: TokenKind, message: &str) {
+        if self.current.kind == kind {
+            self.advance();
+        } else {
+            self.error_at_current(message);
+        }
+    }
+
+    fn error_at(&mut self, token: Token, message: &str) {
+        if self.panic_mode {
+            return;
+        }
+        self.panic_mode = true;
+        eprint!("[line {}] Error", token.line);
+        match token.kind {
+            TokenKind::Error(_) => (),
+            _ => {
+                eprint!(" '{}'", token.lexeme());
+            }
+        }
+        eprintln!(": {message}");
+        self.had_error = true;
+    }
+
+    fn error(&mut self, message: &str) {
+        self.error_at(self.previous.clone(), message);
+    }
+
+    fn error_at_current(&mut self, message: &str) {
+        self.error_at(self.current.clone(), message);
     }
 }
 
-pub struct Compiler<'a> {
-    parser: Parser<'a>,
+pub struct Compiler {
+    parser: Parser,
     pub chunk: Chunk,
 }
 
-impl<'a> Compiler<'a> {
-    pub fn new(source: &'a str) -> Self {
+impl Compiler {
+    pub fn new(source: &str) -> Self {
         Self {
             parser: Parser::new(source),
             chunk: Chunk::new(),
@@ -65,40 +96,8 @@ impl<'a> Compiler<'a> {
         &mut self.chunk
     }
 
-    fn error_at(&mut self, token: Option<Token>, message: &'static str) {
-        if self.parser.panic_mode {
-            return;
-        }
-        self.parser.panic_mode = true;
-        match token {
-            Some(t) => {
-                eprint!("[line {}] Error", t.line);
-                match t.kind {
-                    TokenKind::Error => (),
-                    _ => {
-                        let lexeme = std::str::from_utf8(t.lexeme).unwrap();
-                        eprint!(" '{}'", lexeme);
-                    }
-                }
-            }
-            None => {
-                eprint!("Error at end")
-            }
-        }
-        eprintln!(": {message}");
-        self.parser.had_error = true;
-    }
-
-    fn error(&mut self, message: &'static str) {
-        self.error_at(self.parser.previous.clone(), message);
-    }
-
-    fn error_at_current(&mut self, message: &'static str) {
-        self.error_at(self.parser.current.clone(), message);
-    }
-
     fn emit_byte(&mut self, byte: u8) {
-        let line = self.parser.previous.clone().unwrap().line;
+        let line = self.parser.previous.line;
         self.current_chunk().write(byte, line);
     }
 
@@ -114,7 +113,7 @@ impl<'a> Compiler<'a> {
     fn make_constant(&mut self, value: Value) -> u8 {
         let constant = self.current_chunk().add_constant(value);
         if constant > u8::MAX.into() {
-            self.error("Too many constants in this chunk.");
+            self.parser.error("Too many constants in this chunk.");
             return 0;
         }
         constant as u8
@@ -127,45 +126,71 @@ impl<'a> Compiler<'a> {
 
     fn end_compiler(&mut self) {
         self.emit_return();
+        #[cfg(debug_assertions)]
+        {
+            if !self.parser.had_error {
+                self.chunk.disassemble("code");
+            }
+        }
     }
 
     fn advance(&mut self) {
         self.parser.advance();
     }
 
-    fn binary(&mut self) {
-        let operator_kind = self.parser.previous.clone().map(|t| t.kind);
-        let rule_prec = get_precedence(operator_kind);
-        self.parse_precedence(next_prec(rule_prec));
+    fn grouping(&mut self) {
+        self.expression();
+        self.parser
+            .consume(TokenKind::RightParen, "Expect '(' after expression.");
+    }
 
+    fn unary(&mut self) {
+        let operator_kind = self.parser.previous.kind.clone();
+        self.parse_precedence(Prec::Unary);
         match operator_kind {
-            Some(TokenKind::Plus) => self.emit_byte(OpCode::Add.into()),
-            Some(TokenKind::Minus) => self.emit_byte(OpCode::Subtract.into()),
-            Some(TokenKind::Star) => self.emit_byte(OpCode::Multiply.into()),
-            Some(TokenKind::Slash) => self.emit_byte(OpCode::Divide.into()),
-            _ => todo!(),
+            TokenKind::Minus => self.emit_byte(OpCode::Negate.into()),
+            _ => unreachable!(),
+        }
+    }
+
+    fn binary(&mut self) {
+        let operator_kind = self.parser.previous.kind.clone();
+        let rule_prec = get_precedence(&operator_kind);
+        self.parse_precedence(next_prec(&rule_prec));
+
+        match &operator_kind {
+            TokenKind::Plus => self.emit_byte(OpCode::Add.into()),
+            TokenKind::Minus => self.emit_byte(OpCode::Subtract.into()),
+            TokenKind::Star => self.emit_byte(OpCode::Multiply.into()),
+            TokenKind::Slash => self.emit_byte(OpCode::Divide.into()),
+            _ => unreachable!(),
         }
     }
 
     fn parse_precedence(&mut self, precedence: Prec) {
-        match self.parser.current.clone().unwrap().kind {
-            TokenKind::Number(value) => {
+        match self.parser.current.kind.clone() {
+            TokenKind::Number(s) => {
                 self.advance();
-                self.emit_constant(value);
+                self.emit_constant(s.parse().expect("failed to parse '{s}'"));
+            }
+            TokenKind::LeftParen => {
+                self.advance();
+                self.grouping();
+            }
+            TokenKind::Minus => {
+                self.advance();
+                self.unary();
             }
             _ => {
-                self.error_at_current("Expect expression.");
+                self.parser.error_at_current("Expect expression.");
                 return;
             }
         }
 
-        while precedence <= get_precedence(self.parser.current.clone().map(|t| t.kind)) {
+        while precedence <= get_precedence(&self.parser.current.kind) {
             self.advance();
-            match self.parser.previous.clone().map(|t| t.kind) {
-                Some(TokenKind::Plus)
-                | Some(TokenKind::Minus)
-                | Some(TokenKind::Star)
-                | Some(TokenKind::Slash) => {
+            match self.parser.previous.kind.clone() {
+                TokenKind::Plus | TokenKind::Minus | TokenKind::Star | TokenKind::Slash => {
                     self.binary();
                 }
                 _ => return,
@@ -179,20 +204,22 @@ impl<'a> Compiler<'a> {
 
     pub fn compile(&mut self) -> bool {
         self.expression();
+        self.parser
+            .consume(TokenKind::Eof, "Expect end of expression.");
         self.end_compiler();
-        return !self.parser.had_error;
+        !self.parser.had_error
     }
 }
 
-fn get_precedence(kind: Option<TokenKind>) -> Prec {
+fn get_precedence(kind: &TokenKind) -> Prec {
     match kind {
-        Some(TokenKind::Plus) | Some(TokenKind::Minus) => Prec::Term,
-        Some(TokenKind::Star) | Some(TokenKind::Slash) => Prec::Factor,
+        TokenKind::Plus | TokenKind::Minus => Prec::Term,
+        TokenKind::Star | TokenKind::Slash => Prec::Factor,
         _ => Prec::None,
     }
 }
 
-fn next_prec(prec: Prec) -> Prec {
+fn next_prec(prec: &Prec) -> Prec {
     use Prec::*;
     match prec {
         None => Assignment,

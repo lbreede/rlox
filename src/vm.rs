@@ -1,5 +1,4 @@
 use crate::compiler::Compiler;
-use crate::debug::disassemble_instruction;
 use crate::value::{Value, print_value};
 use crate::{chunk::Chunk, opcode::OpCode};
 
@@ -74,7 +73,7 @@ impl VM {
                     print!(" ]");
                 }
                 println!();
-                disassemble_instruction(chunk, self.ip);
+                chunk.disassemble_instruction(self.ip);
             }
             let instruction = self.read_byte(chunk);
             let opcode = OpCode::try_from(instruction).expect("Invalid opcode");

@@ -1,8 +1,7 @@
+use rlox::vm::{Interpret, VM};
 use std::io::{self, Write};
 use std::process::{self, ExitCode};
 use std::{env, fs};
-
-use rlox::vm::{Interpret, VM};
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().collect();
