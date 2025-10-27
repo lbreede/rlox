@@ -36,10 +36,11 @@ impl VM {
 
     pub fn interpret(&mut self, source: &str) -> Interpret {
         let mut compiler = Compiler::new(source);
-        if !compiler.compile() {
-            return Interpret::CompileError;
+
+        match compiler.compile() {
+            Some(chunk) => self.run(&chunk),
+            None => Interpret::CompileError,
         }
-        self.run(&compiler.chunk)
     }
 
     fn read_byte(&mut self, chunk: &Chunk) -> u8 {

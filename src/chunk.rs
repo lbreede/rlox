@@ -1,6 +1,6 @@
 use crate::{opcode::OpCode, value::Value};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Chunk {
     pub code: Vec<(u8, usize)>,
     pub constants: Vec<Value>,

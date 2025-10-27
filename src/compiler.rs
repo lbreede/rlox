@@ -82,7 +82,7 @@ impl Parser {
 
 pub struct Compiler {
     parser: Parser,
-    pub chunk: Chunk,
+    chunk: Chunk,
 }
 
 impl Compiler {
@@ -202,12 +202,16 @@ impl Compiler {
         self.parse_precedence(Prec::Assignment);
     }
 
-    pub fn compile(&mut self) -> bool {
+    pub fn compile(&mut self) -> Option<Chunk> {
         self.expression();
         self.parser
             .consume(TokenKind::Eof, "Expect end of expression.");
         self.end_compiler();
-        !self.parser.had_error
+        if self.parser.had_error {
+            None
+        } else {
+            Some(self.chunk.clone())
+        }
     }
 }
 
