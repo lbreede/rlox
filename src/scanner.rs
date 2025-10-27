@@ -1,5 +1,11 @@
 use crate::token::{Token, TokenKind};
 
+#[derive(Debug, PartialEq, Clone)]
+pub enum ScanError {
+    UnexpectedCharacter(u8),
+    UnterminatedString,
+}
+
 #[derive(Debug)]
 pub struct Scanner {
     source: Box<[u8]>,
@@ -18,7 +24,7 @@ impl Scanner {
         }
     }
 
-    pub fn scan_token(&mut self) -> Token {
+    pub fn scan_token(&mut self) -> Result<Token, ScanError> {
         self.skip_whitespace();
         self.start = self.current;
 
@@ -81,7 +87,7 @@ impl Scanner {
                 self.make_token(kind)
             }
             b'"' => self.string(),
-            _ => self.error_token("Unexpected character."),
+            _ => Err(ScanError::UnexpectedCharacter(c)),
         }
     }
 
@@ -89,18 +95,11 @@ impl Scanner {
         self.current >= self.source.len()
     }
 
-    fn make_token(&self, kind: TokenKind) -> Token {
-        Token {
+    fn make_token(&self, kind: TokenKind) -> Result<Token, ScanError> {
+        Ok(Token {
             kind,
             line: self.line,
-        }
-    }
-
-    fn error_token(&self, message: &str) -> Token {
-        Token {
-            kind: TokenKind::Error(message.to_string()),
-            line: self.line,
-        }
+        })
     }
 
     fn advance(&mut self) -> Option<u8> {
@@ -157,7 +156,7 @@ impl Scanner {
         self.source.get(self.current + 1).copied()
     }
 
-    fn string(&mut self) -> Token {
+    fn string(&mut self) -> Result<Token, ScanError> {
         while let Some(c) = self.peek() {
             if c == b'"' {
                 break; // closing quote
@@ -169,7 +168,7 @@ impl Scanner {
         }
 
         if self.is_at_end() {
-            return self.error_token("Unterminated string.");
+            return Err(ScanError::UnterminatedString);
         }
 
         // Consume the closing quote
@@ -179,7 +178,7 @@ impl Scanner {
         self.make_token(TokenKind::String(lexeme.into()))
     }
 
-    fn number(&mut self) -> Token {
+    fn number(&mut self) -> Result<Token, ScanError> {
         // Consume the integer part
         while let Some(b) = self.peek() {
             if !b.is_ascii_digit() {
@@ -202,17 +201,17 @@ impl Scanner {
         }
 
         let lexeme = String::from_utf8_lossy(&self.source[self.start..self.current]);
-        Token {
+        Ok(Token {
             kind: TokenKind::Number(lexeme.into()),
             line: self.line,
-        }
+        })
     }
 
     fn is_alpha(c: u8) -> bool {
         c.is_ascii_alphabetic() || c == b'_'
     }
 
-    fn identifier(&mut self) -> Token {
+    fn identifier(&mut self) -> Result<Token, ScanError> {
         while let Some(b) = self.peek() {
             if b.is_ascii_alphanumeric() || b == b'_' {
                 self.advance();
@@ -257,18 +256,18 @@ mod tests {
 abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890_"#;
         let mut scanner = Scanner::new(source);
         let expected_tokens = vec![
-            Token::identifier("andy", 1),
-            Token::identifier("formless", 1),
-            Token::identifier("fo", 1),
-            Token::identifier("_", 1),
-            Token::identifier("_123", 1),
-            Token::identifier("_abc", 1),
-            Token::identifier("ab123", 1),
-            Token::identifier(
+            Ok(Token::identifier("andy", 1)),
+            Ok(Token::identifier("formless", 1)),
+            Ok(Token::identifier("fo", 1)),
+            Ok(Token::identifier("_", 1)),
+            Ok(Token::identifier("_123", 1)),
+            Ok(Token::identifier("_abc", 1)),
+            Ok(Token::identifier("ab123", 1)),
+            Ok(Token::identifier(
                 "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890_",
                 2,
-            ),
-            Token::new(TokenKind::Eof, 2),
+            )),
+            Ok(Token::new(TokenKind::Eof, 2)),
         ];
         for expected in expected_tokens {
             assert_eq!(scanner.scan_token(), expected);
@@ -280,22 +279,22 @@ abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890_"#;
         let source = "and class else false for fun if nil or return super this true var while";
         let mut scanner = Scanner::new(source);
         let expected_tokens = vec![
-            Token::new(TokenKind::And, 1),
-            Token::new(TokenKind::Class, 1),
-            Token::new(TokenKind::Else, 1),
-            Token::new(TokenKind::False, 1),
-            Token::new(TokenKind::For, 1),
-            Token::new(TokenKind::Fun, 1),
-            Token::new(TokenKind::If, 1),
-            Token::new(TokenKind::Nil, 1),
-            Token::new(TokenKind::Or, 1),
-            Token::new(TokenKind::Return, 1),
-            Token::new(TokenKind::Super, 1),
-            Token::new(TokenKind::This, 1),
-            Token::new(TokenKind::True, 1),
-            Token::new(TokenKind::Var, 1),
-            Token::new(TokenKind::While, 1),
-            Token::new(TokenKind::Eof, 1),
+            Ok(Token::new(TokenKind::And, 1)),
+            Ok(Token::new(TokenKind::Class, 1)),
+            Ok(Token::new(TokenKind::Else, 1)),
+            Ok(Token::new(TokenKind::False, 1)),
+            Ok(Token::new(TokenKind::For, 1)),
+            Ok(Token::new(TokenKind::Fun, 1)),
+            Ok(Token::new(TokenKind::If, 1)),
+            Ok(Token::new(TokenKind::Nil, 1)),
+            Ok(Token::new(TokenKind::Or, 1)),
+            Ok(Token::new(TokenKind::Return, 1)),
+            Ok(Token::new(TokenKind::Super, 1)),
+            Ok(Token::new(TokenKind::This, 1)),
+            Ok(Token::new(TokenKind::True, 1)),
+            Ok(Token::new(TokenKind::Var, 1)),
+            Ok(Token::new(TokenKind::While, 1)),
+            Ok(Token::new(TokenKind::Eof, 1)),
         ];
         for expected in expected_tokens {
             assert_eq!(scanner.scan_token(), expected);
@@ -310,13 +309,13 @@ abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890_"#;
 123."#;
         let mut scanner = Scanner::new(source);
         let expected_tokens = vec![
-            Token::new(TokenKind::Number("123".to_string()), 1),
-            Token::new(TokenKind::Number("123.456".to_string()), 2),
-            Token::new(TokenKind::Dot, 3),
-            Token::new(TokenKind::Number("456".to_string()), 3),
-            Token::new(TokenKind::Number("123".to_string()), 4),
-            Token::new(TokenKind::Dot, 4),
-            Token::new(TokenKind::Eof, 4),
+            Ok(Token::new(TokenKind::Number("123".to_string()), 1)),
+            Ok(Token::new(TokenKind::Number("123.456".to_string()), 2)),
+            Ok(Token::new(TokenKind::Dot, 3)),
+            Ok(Token::new(TokenKind::Number("456".to_string()), 3)),
+            Ok(Token::new(TokenKind::Number("123".to_string()), 4)),
+            Ok(Token::new(TokenKind::Dot, 4)),
+            Ok(Token::new(TokenKind::Eof, 4)),
         ];
         for expected in expected_tokens {
             assert_eq!(scanner.scan_token(), expected);
@@ -328,25 +327,25 @@ abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890_"#;
         let source = "(){};,+-*!===<=>=!=<>/.";
         let mut scanner = Scanner::new(source);
         let expected_tokens = vec![
-            Token::new(TokenKind::LeftParen, 1),
-            Token::new(TokenKind::RightParen, 1),
-            Token::new(TokenKind::LeftBrace, 1),
-            Token::new(TokenKind::RightBrace, 1),
-            Token::new(TokenKind::Semicolon, 1),
-            Token::new(TokenKind::Comma, 1),
-            Token::new(TokenKind::Plus, 1),
-            Token::new(TokenKind::Minus, 1),
-            Token::new(TokenKind::Star, 1),
-            Token::new(TokenKind::BangEqual, 1),
-            Token::new(TokenKind::EqualEqual, 1),
-            Token::new(TokenKind::LessEqual, 1),
-            Token::new(TokenKind::GreaterEqual, 1),
-            Token::new(TokenKind::BangEqual, 1),
-            Token::new(TokenKind::Less, 1),
-            Token::new(TokenKind::Greater, 1),
-            Token::new(TokenKind::Slash, 1),
-            Token::new(TokenKind::Dot, 1),
-            Token::new(TokenKind::Eof, 1),
+            Ok(Token::new(TokenKind::LeftParen, 1)),
+            Ok(Token::new(TokenKind::RightParen, 1)),
+            Ok(Token::new(TokenKind::LeftBrace, 1)),
+            Ok(Token::new(TokenKind::RightBrace, 1)),
+            Ok(Token::new(TokenKind::Semicolon, 1)),
+            Ok(Token::new(TokenKind::Comma, 1)),
+            Ok(Token::new(TokenKind::Plus, 1)),
+            Ok(Token::new(TokenKind::Minus, 1)),
+            Ok(Token::new(TokenKind::Star, 1)),
+            Ok(Token::new(TokenKind::BangEqual, 1)),
+            Ok(Token::new(TokenKind::EqualEqual, 1)),
+            Ok(Token::new(TokenKind::LessEqual, 1)),
+            Ok(Token::new(TokenKind::GreaterEqual, 1)),
+            Ok(Token::new(TokenKind::BangEqual, 1)),
+            Ok(Token::new(TokenKind::Less, 1)),
+            Ok(Token::new(TokenKind::Greater, 1)),
+            Ok(Token::new(TokenKind::Slash, 1)),
+            Ok(Token::new(TokenKind::Dot, 1)),
+            Ok(Token::new(TokenKind::Eof, 1)),
         ];
         for expected in expected_tokens {
             assert_eq!(scanner.scan_token(), expected);
@@ -359,9 +358,9 @@ abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890_"#;
 "string""#;
         let mut scanner = Scanner::new(source);
         let expected_tokens = vec![
-            Token::new(TokenKind::String("\"\"".to_string()), 1),
-            Token::new(TokenKind::String("\"string\"".to_string()), 2),
-            Token::new(TokenKind::Eof, 2),
+            Ok(Token::new(TokenKind::String("\"\"".to_string()), 1)),
+            Ok(Token::new(TokenKind::String("\"string\"".to_string()), 2)),
+            Ok(Token::new(TokenKind::Eof, 2)),
         ];
         for expected in expected_tokens {
             assert_eq!(scanner.scan_token(), expected);
@@ -378,11 +377,11 @@ abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890_"#;
 end"#;
         let mut scanner = Scanner::new(source);
         let expected_tokens = vec![
-            Token::identifier("space", 1),
-            Token::identifier("tabs", 1),
-            Token::identifier("newlines", 1),
-            Token::identifier("end", 6),
-            Token::new(TokenKind::Eof, 6),
+            Ok(Token::identifier("space", 1)),
+            Ok(Token::identifier("tabs", 1)),
+            Ok(Token::identifier("newlines", 1)),
+            Ok(Token::identifier("end", 6)),
+            Ok(Token::new(TokenKind::Eof, 6)),
         ];
         for expected in expected_tokens {
             assert_eq!(scanner.scan_token(), expected);

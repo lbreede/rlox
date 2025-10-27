@@ -1,6 +1,6 @@
 use crate::chunk::Chunk;
 use crate::opcode::OpCode;
-use crate::scanner::Scanner;
+use crate::scanner::{ScanError, Scanner};
 use crate::token::{Token, TokenKind};
 use crate::value::Value;
 
@@ -20,11 +20,10 @@ enum Prec {
     Primary,
 }
 
-#[derive(Debug)]
 struct Parser {
     scanner: Scanner,
-    current: Token,
-    previous: Token,
+    current: Result<Token, ScanError>,
+    previous: Result<Token, ScanError>,
     had_error: bool,
     panic_mode: bool,
 }
@@ -36,7 +35,7 @@ impl Parser {
         Self {
             scanner,
             current,
-            previous: Token::new(TokenKind::Eof, 0),
+            previous: Ok(Token::new(TokenKind::Eof, 0)),
             had_error: false,
             panic_mode: false,
         }
@@ -48,35 +47,31 @@ impl Parser {
     }
 
     fn consume(&mut self, kind: TokenKind, message: &str) {
-        if self.current.kind == kind {
-            self.advance();
-        } else {
-            self.error_at_current(message);
+        match &self.current {
+            Ok(token) if token.kind == kind => self.advance(),
+            Ok(_) | Err(_) => self.error_at_current(message),
         }
     }
 
-    fn error_at(&mut self, token: Token, message: &str) {
+    fn error_at(&mut self, token: &Result<Token, ScanError>, message: &str) {
         if self.panic_mode {
             return;
         }
         self.panic_mode = true;
-        eprint!("[line {}] Error", token.line);
-        match token.kind {
-            TokenKind::Error(_) => (),
-            _ => {
-                eprint!(" '{}'", token.lexeme());
-            }
+        match token {
+            Ok(token) => eprint!("[line {}] Error '{}'", token.line, token.lexeme()),
+            Err(err) => eprint!("[scanner error]: {:?}", err),
         }
         eprintln!(": {message}");
         self.had_error = true;
     }
 
     fn error(&mut self, message: &str) {
-        self.error_at(self.previous.clone(), message);
+        self.error_at(&self.previous.clone(), message);
     }
 
     fn error_at_current(&mut self, message: &str) {
-        self.error_at(self.current.clone(), message);
+        self.error_at(&self.current.clone(), message);
     }
 }
 
@@ -97,7 +92,7 @@ impl Compiler {
     }
 
     fn emit_byte(&mut self, byte: u8) {
-        let line = self.parser.previous.line;
+        let line = self.parser.previous.clone().unwrap().line;
         self.current_chunk().write(byte, line);
     }
 
@@ -145,7 +140,7 @@ impl Compiler {
     }
 
     fn unary(&mut self) {
-        let operator_kind = self.parser.previous.kind.clone();
+        let operator_kind = self.parser.previous.clone().unwrap().kind;
         self.parse_precedence(Prec::Unary);
         match operator_kind {
             TokenKind::Minus => self.emit_byte(OpCode::Negate.into()),
@@ -154,7 +149,7 @@ impl Compiler {
     }
 
     fn binary(&mut self) {
-        let operator_kind = self.parser.previous.kind.clone();
+        let operator_kind = self.parser.previous.clone().unwrap().kind;
         let rule_prec = get_precedence(&operator_kind);
         self.parse_precedence(next_prec(&rule_prec));
 
@@ -168,7 +163,7 @@ impl Compiler {
     }
 
     fn parse_precedence(&mut self, precedence: Prec) {
-        match self.parser.current.kind.clone() {
+        match self.parser.current.clone().unwrap().kind {
             TokenKind::Number(s) => {
                 self.advance();
                 self.emit_constant(s.parse().expect("failed to parse '{s}'"));
@@ -187,9 +182,9 @@ impl Compiler {
             }
         }
 
-        while precedence <= get_precedence(&self.parser.current.kind) {
+        while precedence <= get_precedence(&self.parser.current.clone().unwrap().kind) {
             self.advance();
-            match self.parser.previous.kind.clone() {
+            match self.parser.previous.clone().unwrap().kind {
                 TokenKind::Plus | TokenKind::Minus | TokenKind::Star | TokenKind::Slash => {
                     self.binary();
                 }
