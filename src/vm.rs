@@ -38,8 +38,11 @@ impl VM {
         let mut compiler = Compiler::new(source);
 
         match compiler.compile() {
-            Some(chunk) => self.run(&chunk),
-            None => Interpret::CompileError,
+            Ok(chunk) => self.run(&chunk),
+            Err(e) => {
+                eprintln!("{e:?}");
+                Interpret::CompileError
+            }
         }
     }
 

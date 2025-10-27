@@ -4,6 +4,13 @@ use crate::scanner::{ScanError, Scanner};
 use crate::token::{Token, TokenKind};
 use crate::value::Value;
 
+#[derive(Debug)]
+pub enum CompileError {
+    Scan(ScanError),
+    Parse(String),
+    Unknown,
+}
+
 #[repr(u8)]
 #[derive(PartialEq, PartialOrd)]
 enum Prec {
@@ -91,18 +98,25 @@ impl Compiler {
         &mut self.chunk
     }
 
-    fn emit_byte(&mut self, byte: u8) {
-        let line = self.parser.previous.clone().unwrap().line;
+    fn emit_byte(&mut self, byte: u8) -> Result<(), CompileError> {
+        let token = match self.parser.previous.clone() {
+            Ok(t) => t,
+            Err(e) => return Err(CompileError::Scan(e)),
+        };
+        let line = token.line;
         self.current_chunk().write(byte, line);
+        Ok(())
     }
 
-    fn emit_bytes(&mut self, byte1: u8, byte2: u8) {
-        self.emit_byte(byte1);
-        self.emit_byte(byte2);
+    fn emit_bytes(&mut self, byte1: u8, byte2: u8) -> Result<(), CompileError> {
+        self.emit_byte(byte1)?;
+        self.emit_byte(byte2)?;
+        Ok(())
     }
 
-    fn emit_return(&mut self) {
-        self.emit_byte(OpCode::Return.into());
+    fn emit_return(&mut self) -> Result<(), CompileError> {
+        self.emit_byte(OpCode::Return.into())?;
+        Ok(())
     }
 
     fn make_constant(&mut self, value: Value) -> u8 {
@@ -114,71 +128,80 @@ impl Compiler {
         constant as u8
     }
 
-    fn emit_constant(&mut self, value: Value) {
+    fn emit_constant(&mut self, value: Value) -> Result<(), CompileError> {
         let byte2 = self.make_constant(value);
-        self.emit_bytes(OpCode::Constant.into(), byte2);
+        self.emit_bytes(OpCode::Constant.into(), byte2)?;
+        Ok(())
     }
 
-    fn end_compiler(&mut self) {
-        self.emit_return();
+    fn end_compiler(&mut self) -> Result<(), CompileError> {
+        self.emit_return()?;
         #[cfg(debug_assertions)]
         {
             if !self.parser.had_error {
                 self.chunk.disassemble("code");
             }
         }
+        Ok(())
     }
 
     fn advance(&mut self) {
         self.parser.advance();
     }
 
-    fn grouping(&mut self) {
-        self.expression();
+    fn grouping(&mut self) -> Result<(), CompileError> {
+        self.expression()?;
         self.parser
             .consume(TokenKind::RightParen, "Expect '(' after expression.");
+        Ok(())
     }
 
-    fn unary(&mut self) {
-        let operator_kind = self.parser.previous.clone().unwrap().kind;
-        self.parse_precedence(Prec::Unary);
+    fn unary(&mut self) -> Result<(), CompileError> {
+        let token = match self.parser.previous.clone() {
+            Ok(t) => t,
+            Err(e) => return Err(CompileError::Scan(e)),
+        };
+        let operator_kind = token.kind;
+        self.parse_precedence(Prec::Unary)?;
         match operator_kind {
-            TokenKind::Minus => self.emit_byte(OpCode::Negate.into()),
+            TokenKind::Minus => self.emit_byte(OpCode::Negate.into())?,
             _ => unreachable!(),
         }
+        Ok(())
     }
 
-    fn binary(&mut self) {
+    fn binary(&mut self) -> Result<(), CompileError> {
         let operator_kind = self.parser.previous.clone().unwrap().kind;
         let rule_prec = get_precedence(&operator_kind);
-        self.parse_precedence(next_prec(&rule_prec));
+        self.parse_precedence(next_prec(&rule_prec))?;
 
         match &operator_kind {
-            TokenKind::Plus => self.emit_byte(OpCode::Add.into()),
-            TokenKind::Minus => self.emit_byte(OpCode::Subtract.into()),
-            TokenKind::Star => self.emit_byte(OpCode::Multiply.into()),
-            TokenKind::Slash => self.emit_byte(OpCode::Divide.into()),
+            TokenKind::Plus => self.emit_byte(OpCode::Add.into())?,
+            TokenKind::Minus => self.emit_byte(OpCode::Subtract.into())?,
+            TokenKind::Star => self.emit_byte(OpCode::Multiply.into())?,
+            TokenKind::Slash => self.emit_byte(OpCode::Divide.into())?,
             _ => unreachable!(),
         }
+        Ok(())
     }
 
-    fn parse_precedence(&mut self, precedence: Prec) {
+    fn parse_precedence(&mut self, precedence: Prec) -> Result<(), CompileError> {
         match self.parser.current.clone().unwrap().kind {
             TokenKind::Number(s) => {
                 self.advance();
-                self.emit_constant(s.parse().expect("failed to parse '{s}'"));
+                self.emit_constant(s.parse().expect("failed to parse '{s}'"))?;
             }
             TokenKind::LeftParen => {
                 self.advance();
-                self.grouping();
+                self.grouping()?;
             }
             TokenKind::Minus => {
                 self.advance();
-                self.unary();
+                self.unary()?;
             }
             _ => {
-                self.parser.error_at_current("Expect expression.");
-                return;
+                // self.parser.error_at_current("Expect expression.");
+                return Err(CompileError::Parse("Expect expression".to_owned()));
             }
         }
 
@@ -186,26 +209,28 @@ impl Compiler {
             self.advance();
             match self.parser.previous.clone().unwrap().kind {
                 TokenKind::Plus | TokenKind::Minus | TokenKind::Star | TokenKind::Slash => {
-                    self.binary();
+                    self.binary()?;
                 }
-                _ => return,
+                _ => return Err(CompileError::Unknown),
             }
         }
+        Ok(())
     }
 
-    fn expression(&mut self) {
-        self.parse_precedence(Prec::Assignment);
+    fn expression(&mut self) -> Result<(), CompileError> {
+        self.parse_precedence(Prec::Assignment)?;
+        Ok(())
     }
 
-    pub fn compile(&mut self) -> Option<Chunk> {
-        self.expression();
+    pub fn compile(&mut self) -> Result<Chunk, CompileError> {
+        self.expression()?;
         self.parser
             .consume(TokenKind::Eof, "Expect end of expression.");
-        self.end_compiler();
+        self.end_compiler()?;
         if self.parser.had_error {
-            None
+            Err(CompileError::Unknown)
         } else {
-            Some(self.chunk.clone())
+            Ok(self.chunk.clone())
         }
     }
 }
