@@ -1,8 +1,9 @@
 use crate::chunk::Chunk;
 use crate::opcode::OpCode;
 use crate::scanner::Scanner;
-use crate::token::{LexemeError, Token, TokenKind};
+use crate::token::{Token, TokenKind};
 use crate::value::Value;
+use std::collections::HashMap;
 
 #[repr(u8)]
 #[derive(PartialEq, PartialOrd)]
@@ -28,11 +29,10 @@ struct Parser {
     had_error: bool,
     panic_mode: bool,
 }
-
 impl Parser {
-    fn new(source: &str) -> Self {
+    fn new(source: &str, interner: &mut Interner) -> Self {
         let mut scanner = Scanner::new(source);
-        let current = scanner.scan_token();
+        let current = scanner.scan_token(interner);
         Self {
             scanner,
             current,
@@ -42,20 +42,20 @@ impl Parser {
         }
     }
 
-    fn advance(&mut self) {
+    fn advance(&mut self, interner: &mut Interner) {
         std::mem::swap(&mut self.previous, &mut self.current);
-        self.current = self.scanner.scan_token();
+        self.current = self.scanner.scan_token(interner);
     }
 
-    fn consume(&mut self, kind: TokenKind, message: &str) {
+    fn consume(&mut self, kind: TokenKind, message: &str, interner: &mut Interner) {
         if self.current.kind == kind {
-            self.advance();
+            self.advance(interner);
         } else {
-            self.error_at_current(message);
+            self.error_at_current(message, interner);
         }
     }
 
-    fn error_at(&mut self, token: Token, message: &str) {
+    fn error_at(&mut self, token: Token, message: &str, interner: &mut Interner) {
         if self.panic_mode {
             return;
         }
@@ -64,7 +64,7 @@ impl Parser {
         match &token.kind {
             TokenKind::Error(_) => (),
             TokenKind::Identifier(idx) | TokenKind::String(idx) | TokenKind::Number(idx) => {
-                let lexeme = self.scanner.interner.lookup(*idx);
+                let lexeme = interner.lookup(*idx);
                 eprint!(" '{}'", lexeme);
             }
             kind => match <&str>::try_from(kind) {
@@ -76,24 +76,53 @@ impl Parser {
         self.had_error = true;
     }
 
-    fn error(&mut self, message: &str) {
-        self.error_at(self.previous.clone(), message);
+    fn error(&mut self, message: &str, interner: &mut Interner) {
+        self.error_at(self.previous.clone(), message, interner);
     }
 
-    fn error_at_current(&mut self, message: &str) {
-        self.error_at(self.current.clone(), message);
+    fn error_at_current(&mut self, message: &str, interner: &mut Interner) {
+        self.error_at(self.current.clone(), message, interner);
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct Interner {
+    map: HashMap<String, usize>,
+    vec: Vec<String>,
+}
+
+impl Interner {
+    pub fn intern(&mut self, name: &str) -> usize {
+        if let Some(&idx) = self.map.get(name) {
+            return idx;
+        }
+        let idx = self.map.len();
+        self.map.insert(name.to_owned(), idx);
+        self.vec.push(name.to_owned());
+
+        debug_assert!(self.lookup(idx) == name);
+        debug_assert!(self.intern(name) == idx);
+
+        idx
+    }
+
+    pub fn lookup(&self, idx: usize) -> &str {
+        self.vec[idx].as_str()
     }
 }
 
 pub struct Compiler {
     parser: Parser,
+    interner: Interner,
     pub chunk: Chunk,
 }
 
 impl Compiler {
     pub fn new(source: &str) -> Self {
+        let mut interner = Interner::default();
         Self {
-            parser: Parser::new(source),
+            parser: Parser::new(source, &mut interner),
+            interner,
             chunk: Chunk::new(),
         }
     }
@@ -118,7 +147,8 @@ impl Compiler {
     fn make_constant(&mut self, value: Value) -> u8 {
         let constant = self.current_chunk().add_constant(value);
         if constant > u8::MAX.into() {
-            self.parser.error("Too many constants in this chunk.");
+            self.parser
+                .error("Too many constants in this chunk.", &mut self.interner);
             return 0;
         }
         constant as u8
@@ -140,13 +170,16 @@ impl Compiler {
     }
 
     fn advance(&mut self) {
-        self.parser.advance();
+        self.parser.advance(&mut self.interner);
     }
 
     fn grouping(&mut self) {
         self.expression();
-        self.parser
-            .consume(TokenKind::RightParen, "Expect '(' after expression.");
+        self.parser.consume(
+            TokenKind::RightParen,
+            "Expect '(' after expression.",
+            &mut self.interner,
+        );
     }
 
     fn unary(&mut self) {
@@ -176,7 +209,7 @@ impl Compiler {
         match self.parser.current.kind.clone() {
             TokenKind::Number(idx) => {
                 self.advance();
-                let lexeme = self.parser.scanner.interner.lookup(idx);
+                let lexeme = self.interner.lookup(idx);
                 self.emit_constant(lexeme.parse().expect("failed to parse '{lexeme}'"));
             }
             TokenKind::LeftParen => {
@@ -188,7 +221,8 @@ impl Compiler {
                 self.unary();
             }
             _ => {
-                self.parser.error_at_current("Expect expression.");
+                self.parser
+                    .error_at_current("Expect expression.", &mut self.interner);
                 return;
             }
         }
@@ -210,8 +244,11 @@ impl Compiler {
 
     pub fn compile(&mut self) -> bool {
         self.expression();
-        self.parser
-            .consume(TokenKind::Eof, "Expect end of expression.");
+        self.parser.consume(
+            TokenKind::Eof,
+            "Expect end of expression.",
+            &mut self.interner,
+        );
         self.end_compiler();
         !self.parser.had_error
     }

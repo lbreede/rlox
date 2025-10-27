@@ -1,7 +1,3 @@
-use std::{collections::HashMap, fmt};
-
-use crate::value::Value;
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
     // Single-character tokens.

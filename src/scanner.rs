@@ -1,53 +1,27 @@
-use crate::token::{Token, TokenKind};
-use std::collections::HashMap;
-
-#[derive(Debug, Default)]
-pub struct Interner {
-    map: HashMap<String, usize>,
-    vec: Vec<String>,
-}
-
-impl Interner {
-    fn intern(&mut self, name: &str) -> usize {
-        if let Some(&idx) = self.map.get(name) {
-            return idx;
-        }
-        let idx = self.map.len();
-        self.map.insert(name.to_owned(), idx);
-        self.vec.push(name.to_owned());
-
-        debug_assert!(self.lookup(idx) == name);
-        debug_assert!(self.intern(name) == idx);
-
-        idx
-    }
-
-    pub fn lookup(&self, idx: usize) -> &str {
-        self.vec[idx].as_str()
-    }
-}
+use crate::{
+    compiler::Interner,
+    token::{Token, TokenKind},
+};
 
 #[derive(Debug)]
-pub struct Scanner<'i> {
+pub struct Scanner {
     source: Box<[u8]>,
-    pub interner: &'i mut Interner,
     start: usize,
     current: usize,
     line: usize,
 }
 
-impl<'i> Scanner<'i> {
-    pub fn new(source: &str, interner: &'i mut Interner) -> Self {
+impl Scanner {
+    pub fn new(source: &str) -> Self {
         Self {
             source: Box::from(source.as_bytes()),
-            interner,
             start: 0,
             current: 0,
             line: 1,
         }
     }
 
-    pub fn scan_token(&mut self) -> Token {
+    pub fn scan_token(&mut self, interner: &mut Interner) -> Token {
         self.skip_whitespace();
         self.start = self.current;
 
@@ -58,11 +32,11 @@ impl<'i> Scanner<'i> {
         let c = self.advance().expect("advance called at end");
 
         if Scanner::is_alpha(c) {
-            return self.identifier();
+            return self.identifier(interner);
         }
 
         if c.is_ascii_digit() {
-            return self.number();
+            return self.number(interner);
         }
 
         match c {
@@ -109,7 +83,7 @@ impl<'i> Scanner<'i> {
                 };
                 self.make_token(kind)
             }
-            b'"' => self.string(),
+            b'"' => self.string(interner),
             _ => self.error_token("Unexpected character."),
         }
     }
@@ -186,7 +160,7 @@ impl<'i> Scanner<'i> {
         self.source.get(self.current + 1).copied()
     }
 
-    fn string(&mut self) -> Token {
+    fn string(&mut self, interner: &mut Interner) -> Token {
         while let Some(c) = self.peek() {
             if c == b'"' {
                 break; // closing quote
@@ -205,11 +179,11 @@ impl<'i> Scanner<'i> {
         self.advance();
 
         let lexeme = std::str::from_utf8(&self.source[self.start..self.current]).unwrap();
-        let idx = self.interner.intern(lexeme);
+        let idx = interner.intern(lexeme);
         self.make_token(TokenKind::String(idx))
     }
 
-    fn number(&mut self) -> Token {
+    fn number(&mut self, interner: &mut Interner) -> Token {
         // Consume the integer part
         while let Some(b) = self.peek() {
             if !b.is_ascii_digit() {
@@ -232,7 +206,7 @@ impl<'i> Scanner<'i> {
         }
 
         let lexeme = std::str::from_utf8(&self.source[self.start..self.current]).unwrap();
-        let idx = self.interner.intern(lexeme);
+        let idx = interner.intern(lexeme);
         self.make_token(TokenKind::Number(idx))
     }
 
@@ -240,7 +214,7 @@ impl<'i> Scanner<'i> {
         c.is_ascii_alphabetic() || c == b'_'
     }
 
-    fn identifier(&mut self) -> Token {
+    fn identifier(&mut self, interner: &mut Interner) -> Token {
         while let Some(b) = self.peek() {
             if b.is_ascii_alphanumeric() || b == b'_' {
                 self.advance();
@@ -249,11 +223,11 @@ impl<'i> Scanner<'i> {
             }
         }
         let lexeme = String::from_utf8_lossy(&self.source[self.start..self.current]).to_string();
-        let kind = self.identifier_type(&lexeme);
+        let kind = self.identifier_type(&lexeme, interner);
         self.make_token(kind)
     }
 
-    fn identifier_type(&mut self, lexeme: &str) -> TokenKind {
+    fn identifier_type(&mut self, lexeme: &str, interner: &mut Interner) -> TokenKind {
         match lexeme {
             "and" => TokenKind::And,
             "class" => TokenKind::Class,
@@ -272,7 +246,7 @@ impl<'i> Scanner<'i> {
             "var" => TokenKind::Var,
             "while" => TokenKind::While,
             _ => {
-                let idx = self.interner.intern(lexeme);
+                let idx = interner.intern(lexeme);
                 TokenKind::Identifier(idx)
             }
         }
@@ -289,7 +263,7 @@ mod tests {
 abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890_"#;
 
         let mut interner = Interner::default();
-        let mut scanner = Scanner::new(source, &mut interner);
+        let mut scanner = Scanner::new(source);
 
         let expected = vec![
             ("andy", 1),
@@ -306,10 +280,10 @@ abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890_"#;
         ];
 
         for (lexeme, line) in expected {
-            let token = scanner.scan_token();
+            let token = scanner.scan_token(&mut interner);
             match &token.kind {
                 TokenKind::Identifier(idx) => {
-                    assert_eq!(scanner.interner.lookup(*idx), lexeme);
+                    assert_eq!(interner.lookup(*idx), lexeme);
                 }
                 _ => panic!("expected identifier, got {:?}", token.kind),
             }
@@ -317,7 +291,7 @@ abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890_"#;
         }
 
         // final token should be EOF
-        let eof = scanner.scan_token();
+        let eof = scanner.scan_token(&mut interner);
         assert!(matches!(eof.kind, TokenKind::Eof));
 
         // verify lexeme for EOF using TryFrom
@@ -331,7 +305,7 @@ var bar = 27;
 foo = foo + bar;
 "#;
         let mut interner = Interner::default();
-        let mut scanner = Scanner::new(source, &mut interner);
+        let mut scanner = Scanner::new(source);
         let expected = vec![
             ("var", 1),
             ("foo", 1),
@@ -352,17 +326,17 @@ foo = foo + bar;
             (" ", 4),
         ];
         for (lexeme, line) in expected {
-            let token = scanner.scan_token();
+            let token = scanner.scan_token(&mut interner);
             println!("{token:?}");
             match &token.kind {
                 TokenKind::Identifier(idx) | TokenKind::Number(idx) => {
-                    assert_eq!(scanner.interner.lookup(*idx), lexeme);
+                    assert_eq!(interner.lookup(*idx), lexeme);
                 }
                 kind => assert_eq!(<&str>::try_from(kind), Ok(lexeme)),
             }
             assert_eq!(token.line, line);
         }
-        println!("{:?}", scanner.interner);
+        println!("{:?}", interner);
     }
 
     //     #[test]
