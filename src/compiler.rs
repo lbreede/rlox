@@ -1,7 +1,7 @@
 use crate::chunk::Chunk;
 use crate::opcode::OpCode;
 use crate::scanner::Scanner;
-use crate::token::{Token, TokenKind};
+use crate::token::{LexemeError, Token, TokenKind};
 use crate::value::Value;
 
 #[repr(u8)]
@@ -61,11 +61,16 @@ impl Parser {
         }
         self.panic_mode = true;
         eprint!("[line {}] Error", token.line);
-        match token.kind {
+        match &token.kind {
             TokenKind::Error(_) => (),
-            _ => {
-                eprint!(" '{}'", token.lexeme());
+            TokenKind::Identifier(idx) | TokenKind::String(idx) | TokenKind::Number(idx) => {
+                let lexeme = self.scanner.interner.lookup(*idx);
+                eprint!(" '{}'", lexeme);
             }
+            kind => match <&str>::try_from(kind) {
+                Ok(lexeme) => eprint!(" '{}'", lexeme),
+                Err(e) => panic!("{:?}", e),
+            },
         }
         eprintln!(": {message}");
         self.had_error = true;
@@ -169,9 +174,10 @@ impl Compiler {
 
     fn parse_precedence(&mut self, precedence: Prec) {
         match self.parser.current.kind.clone() {
-            TokenKind::Number(s) => {
+            TokenKind::Number(idx) => {
                 self.advance();
-                self.emit_constant(s.parse().expect("failed to parse '{s}'"));
+                let lexeme = self.parser.scanner.interner.lookup(idx);
+                self.emit_constant(lexeme.parse().expect("failed to parse '{lexeme}'"));
             }
             TokenKind::LeftParen => {
                 self.advance();
