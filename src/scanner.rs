@@ -2,7 +2,7 @@ use crate::token::{Token, TokenKind};
 
 #[derive(Debug)]
 pub struct Scanner {
-    source: Box<[u8]>,
+    source: String,
     start: usize,
     current: usize,
     line: usize,
@@ -11,11 +11,73 @@ pub struct Scanner {
 impl Scanner {
     pub fn new(source: &str) -> Self {
         Self {
-            source: Box::from(source.as_bytes()),
+            source: source.to_owned(),
             start: 0,
             current: 0,
             line: 1,
         }
+    }
+
+    fn is_at_end(&self) -> bool {
+        self.current >= self.source.len()
+    }
+
+    fn advance(&mut self) -> Option<char> {
+        if self.is_at_end() {
+            return None;
+        }
+        let c = self.source[self.current..].chars().next().unwrap();
+        self.current += c.len_utf8();
+        Some(c)
+    }
+
+    fn peek(&self) -> Option<char> {
+        if self.is_at_end() {
+            None
+        } else {
+            self.source[self.current..].chars().next()
+        }
+    }
+
+    fn peek_next(&self) -> Option<char> {
+        let mut iter = self.source[self.current..].chars();
+        iter.next(); // skip current
+        iter.next()
+    }
+
+    fn match_byte(&mut self, expected: char) -> bool {
+        if self.peek() == Some(expected) {
+            self.advance();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn lexeme(&self) -> &str {
+        &self.source[self.start..self.current]
+    }
+
+    // Example use inside string():
+    fn string(&mut self) -> Token {
+        while let Some(c) = self.peek() {
+            if c == '"' {
+                break;
+            }
+            if c == '\n' {
+                self.line += 1;
+            }
+            self.advance();
+        }
+
+        if self.is_at_end() {
+            return self.error_token("Unterminated string.");
+        }
+
+        self.advance(); // consume closing quote
+
+        let lexeme = self.lexeme().to_owned();
+        self.make_token(TokenKind::String(lexeme))
     }
 
     pub fn scan_token(&mut self) -> Token {
@@ -37,56 +99,52 @@ impl Scanner {
         }
 
         match c {
-            b'(' => self.make_token(TokenKind::LeftParen),
-            b')' => self.make_token(TokenKind::RightParen),
-            b'{' => self.make_token(TokenKind::LeftBrace),
-            b'}' => self.make_token(TokenKind::RightBrace),
-            b';' => self.make_token(TokenKind::Semicolon),
-            b',' => self.make_token(TokenKind::Comma),
-            b'.' => self.make_token(TokenKind::Dot),
-            b'-' => self.make_token(TokenKind::Minus),
-            b'+' => self.make_token(TokenKind::Plus),
-            b'/' => self.make_token(TokenKind::Slash),
-            b'*' => self.make_token(TokenKind::Star),
-            b'!' => {
-                let kind = if self.match_byte(b'=') {
+            '(' => self.make_token(TokenKind::LeftParen),
+            ')' => self.make_token(TokenKind::RightParen),
+            '{' => self.make_token(TokenKind::LeftBrace),
+            '}' => self.make_token(TokenKind::RightBrace),
+            ';' => self.make_token(TokenKind::Semicolon),
+            ',' => self.make_token(TokenKind::Comma),
+            '.' => self.make_token(TokenKind::Dot),
+            '-' => self.make_token(TokenKind::Minus),
+            '+' => self.make_token(TokenKind::Plus),
+            '/' => self.make_token(TokenKind::Slash),
+            '*' => self.make_token(TokenKind::Star),
+            '!' => {
+                let kind = if self.match_byte('=') {
                     TokenKind::BangEqual
                 } else {
                     TokenKind::Bang
                 };
                 self.make_token(kind)
             }
-            b'=' => {
-                let kind = if self.match_byte(b'=') {
+            '=' => {
+                let kind = if self.match_byte('=') {
                     TokenKind::EqualEqual
                 } else {
                     TokenKind::Equal
                 };
                 self.make_token(kind)
             }
-            b'<' => {
-                let kind = if self.match_byte(b'=') {
+            '<' => {
+                let kind = if self.match_byte('=') {
                     TokenKind::LessEqual
                 } else {
                     TokenKind::Less
                 };
                 self.make_token(kind)
             }
-            b'>' => {
-                let kind = if self.match_byte(b'=') {
+            '>' => {
+                let kind = if self.match_byte('=') {
                     TokenKind::GreaterEqual
                 } else {
                     TokenKind::Greater
                 };
                 self.make_token(kind)
             }
-            b'"' => self.string(),
+            '"' => self.string(),
             _ => self.error_token("Unexpected character."),
         }
-    }
-
-    pub fn is_at_end(&self) -> bool {
-        self.current >= self.source.len()
     }
 
     fn make_token(&self, kind: TokenKind) -> Token {
@@ -103,39 +161,21 @@ impl Scanner {
         }
     }
 
-    fn advance(&mut self) -> Option<u8> {
-        if self.is_at_end() {
-            None
-        } else {
-            let b = self.source[self.current];
-            self.current += 1;
-            Some(b)
-        }
-    }
-
-    fn match_byte(&mut self, expected: u8) -> bool {
-        if self.is_at_end() || self.source[self.current] != expected {
-            return false;
-        }
-        self.current += 1;
-        true
-    }
-
     fn skip_whitespace(&mut self) {
         loop {
             match self.peek() {
-                Some(b' ' | b'\r' | b'\t') => {
+                Some(' ' | '\r' | '\t') => {
                     self.advance();
                 }
-                Some(b'\n') => {
+                Some('\n') => {
                     self.line += 1;
                     self.advance();
                 }
-                Some(b'/') => {
-                    if self.peek_next() == Some(b'/') {
+                Some('/') => {
+                    if self.peek_next() == Some('/') {
                         // Skip comment until newline or end-of-input
                         while let Some(c) = self.peek() {
-                            if c == b'\n' {
+                            if c == '\n' {
                                 break;
                             }
                             self.advance();
@@ -149,36 +189,6 @@ impl Scanner {
         }
     }
 
-    fn peek(&self) -> Option<u8> {
-        self.source.get(self.current).copied()
-    }
-
-    fn peek_next(&self) -> Option<u8> {
-        self.source.get(self.current + 1).copied()
-    }
-
-    fn string(&mut self) -> Token {
-        while let Some(c) = self.peek() {
-            if c == b'"' {
-                break; // closing quote
-            }
-            if c == b'\n' {
-                self.line += 1;
-            }
-            self.advance();
-        }
-
-        if self.is_at_end() {
-            return self.error_token("Unterminated string.");
-        }
-
-        // Consume the closing quote
-        self.advance();
-
-        let lexeme = String::from_utf8_lossy(&self.source[self.start..self.current]);
-        self.make_token(TokenKind::String(lexeme.into()))
-    }
-
     fn number(&mut self) -> Token {
         // Consume the integer part
         while let Some(b) = self.peek() {
@@ -189,7 +199,7 @@ impl Scanner {
         }
 
         // Look for a fractional part
-        if self.peek() == Some(b'.') && self.peek_next().is_some_and(|b| b.is_ascii_digit()) {
+        if self.peek() == Some('.') && self.peek_next().is_some_and(|b| b.is_ascii_digit()) {
             self.advance(); // consume the '.'
 
             // Consume the fractional digits
@@ -201,20 +211,21 @@ impl Scanner {
             }
         }
 
-        let lexeme = String::from_utf8_lossy(&self.source[self.start..self.current]);
+        // TODO: Consider converting to `f64` here instead of storing the owned `String`
+        let lexeme = &self.source[self.start..self.current];
         Token {
-            kind: TokenKind::Number(lexeme.into()),
+            kind: TokenKind::Number(lexeme.to_owned()),
             line: self.line,
         }
     }
 
-    fn is_alpha(c: u8) -> bool {
-        c.is_ascii_alphabetic() || c == b'_'
+    fn is_alpha(c: char) -> bool {
+        c.is_ascii_alphabetic() || c == '_'
     }
 
     fn identifier(&mut self) -> Token {
         while let Some(b) = self.peek() {
-            if b.is_ascii_alphanumeric() || b == b'_' {
+            if b.is_ascii_alphanumeric() || b == '_' {
                 self.advance();
             } else {
                 break;
@@ -224,25 +235,25 @@ impl Scanner {
         self.make_token(kind)
     }
 
-    fn identifier_type(&self, lexeme: &[u8]) -> TokenKind {
+    fn identifier_type(&self, lexeme: &str) -> TokenKind {
         match lexeme {
-            b"and" => TokenKind::And,
-            b"class" => TokenKind::Class,
-            b"else" => TokenKind::Else,
-            b"false" => TokenKind::False,
-            b"for" => TokenKind::For,
-            b"fun" => TokenKind::Fun,
-            b"if" => TokenKind::If,
-            b"nil" => TokenKind::Nil,
-            b"or" => TokenKind::Or,
-            b"print" => TokenKind::Print,
-            b"return" => TokenKind::Return,
-            b"super" => TokenKind::Super,
-            b"this" => TokenKind::This,
-            b"true" => TokenKind::True,
-            b"var" => TokenKind::Var,
-            b"while" => TokenKind::While,
-            _ => TokenKind::Identifier(String::from_utf8_lossy(lexeme).into()),
+            "and" => TokenKind::And,
+            "class" => TokenKind::Class,
+            "else" => TokenKind::Else,
+            "false" => TokenKind::False,
+            "for" => TokenKind::For,
+            "fun" => TokenKind::Fun,
+            "if" => TokenKind::If,
+            "nil" => TokenKind::Nil,
+            "or" => TokenKind::Or,
+            "print" => TokenKind::Print,
+            "return" => TokenKind::Return,
+            "super" => TokenKind::Super,
+            "this" => TokenKind::This,
+            "true" => TokenKind::True,
+            "var" => TokenKind::Var,
+            "while" => TokenKind::While,
+            _ => TokenKind::Identifier(lexeme.to_owned()),
         }
     }
 }
@@ -386,6 +397,15 @@ end"#;
         ];
         for expected in expected_tokens {
             assert_eq!(scanner.scan_token(), expected);
+        }
+    }
+
+    #[test]
+    fn utf8() {
+        let source = "var foo = \"🦀\";";
+        let mut scanner = Scanner::new(source);
+        for _ in 0..6 {
+            println!("{:?}", scanner.scan_token());
         }
     }
 }
