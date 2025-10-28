@@ -62,9 +62,9 @@ impl Token {
         Self { kind, line }
     }
 
-    pub fn identifier<S: ToString>(identifier: S, line: usize) -> Self {
+    pub fn identifier(identifier: &str, line: usize) -> Self {
         Self {
-            kind: TokenKind::Identifier(identifier.to_string()),
+            kind: TokenKind::Identifier(identifier.to_owned()),
             line,
         }
     }
@@ -110,7 +110,7 @@ impl Token {
             TokenKind::Var => "var",
             TokenKind::While => "while",
             TokenKind::Error(ref s) => s,
-            TokenKind::Eof => " ",
+            TokenKind::Eof => "",
         }
     }
 }
@@ -149,18 +149,18 @@ impl fmt::Display for Token {
             TokenKind::LessEqual => write!(f, "LESS_EQUAL <= null"),
             TokenKind::And => write!(f, "AND and null"),
             TokenKind::Class => write!(f, "CLASS class null"),
+            TokenKind::If => write!(f, "IF if null"),
             TokenKind::Else => write!(f, "ELSE else null"),
+            TokenKind::True => write!(f, "TRUE true null"),
             TokenKind::False => write!(f, "FALSE false null"),
             TokenKind::For => write!(f, "FOR for null"),
             TokenKind::Fun => write!(f, "FUN fun null"),
-            TokenKind::If => write!(f, "IF if null"),
             TokenKind::Nil => write!(f, "NIL nil null"),
             TokenKind::Or => write!(f, "OR or null"),
             TokenKind::Print => write!(f, "PRINT print null"),
             TokenKind::Return => write!(f, "RETURN return null"),
             TokenKind::Super => write!(f, "SUPER super null"),
             TokenKind::This => write!(f, "THIS this null"),
-            TokenKind::True => write!(f, "TRUE true null"),
             TokenKind::Var => write!(f, "VAR var null"),
             TokenKind::While => write!(f, "WHILE while null"),
             TokenKind::Error(s) => write!(f, "ERROR {s}"),
