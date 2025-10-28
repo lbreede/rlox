@@ -62,9 +62,9 @@ impl Token {
         Self { kind, line }
     }
 
-    pub fn identifier<S: ToString>(identifier: S, line: usize) -> Self {
+    pub fn identifier(identifier: &str, line: usize) -> Self {
         Self {
-            kind: TokenKind::Identifier(identifier.to_string()),
+            kind: TokenKind::Identifier(identifier.to_owned()),
             line,
         }
     }
@@ -110,7 +110,7 @@ impl Token {
             TokenKind::Var => "var",
             TokenKind::While => "while",
             TokenKind::Error(ref s) => s,
-            TokenKind::Eof => " ",
+            TokenKind::Eof => "",
         }
     }
 }
